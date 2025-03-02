@@ -10,7 +10,7 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
     st.stop()  # Prevent further code execution if the user is not logged in
 
 
-st.title("🧙 TBP Assistant")
+st.set_page_config(page_title="🧙 TBP Assistant", layout="wide")
 
 # Initialize the chat messages history
 openai.api_key = st.secrets.OPENAI_API_KEY
