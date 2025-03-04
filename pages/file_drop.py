@@ -30,7 +30,7 @@ import streamlit as st
 # Create two columns: one for the image and one for the title
 col1, col2 = st.columns([1, 10])  # Adjust the column widths as needed
 with col1:
-    logo_path = r"\\192.168.4.16\Mail Files\Mailing Lists\TBPDB_Automation\company_logos\tbp_yellow_logo_bw.png"  # Replace with your logo file path
+    logo_path = r"https://jmaile.github.io/images/tbp_yellow_logo.jpg"  # Replace with your logo file path
     st.image(logo_path, width=100)  # Adjust the width as needed
 
 with col2:
