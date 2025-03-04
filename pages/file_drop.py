@@ -82,14 +82,7 @@ def push_file_to_snowflake(df, filename):
     import snowflake as sf
     from snowflake import connector
     # Establish Snowflake connection
-    conn = connector.connect(
-        user='CJMSCORPIO',
-        password='Peanutbutter!3',
-        account='ETMGKGP-VOA94744',
-        warehouse='COMPUTE_WH',
-        database='TASTY_BYTES_SAMPLE_DATA',
-        schema='RAW_POS'
-    )
+    conn = st.connection("snowflake")
 
     temp_file_path = f'/tmp/TBP_FD_{filename}.pqt'
     df.to_parquet(temp_file_path, index=False)
