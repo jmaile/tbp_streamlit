@@ -1,5 +1,6 @@
 import io
 import time
+from datetime import datetime
 from pprint import pprint
 
 import numpy as np
@@ -84,11 +85,11 @@ def push_file_to_snowflake(df, filename):
     # Establish Snowflake connection
     conn = st.connection("snowflake")
 
-    temp_file_path = f'/tmp/TBP_FD_{filename}.pqt'
+    temp_file_path = f'/tmp/TBP_FD_{datetime.now().strftime("%y%m%d")}_{filename}.pqt'
     df.to_parquet(temp_file_path, index=False)
 
     # Define the stage name (assuming a stage exists in Snowflake)
-    stage_name = '@TBPDB_PYTHON'
+    stage_name = '@TASTY_BYTES_SAMPLE_DATA.RAW_POS.TBPDB_PYTHON'
 
 
     # Execute the PUT command to stage the CSV data
@@ -96,11 +97,6 @@ def push_file_to_snowflake(df, filename):
     put_command = f"PUT 'file://{temp_file_path}' {stage_name};"
     st.write(put_command)
     cursor.execute(put_command)
-    cursor.close()
-
-    # Close the connection
-    conn.close()
-
 
 def get_uploaded_file_as_df(uploaded_file):
     # Read the file's bytes
