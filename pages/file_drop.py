@@ -4,6 +4,7 @@ from datetime import datetime
 from pprint import pprint
 
 import numpy as np
+import pyarrow
 import streamlit as st
 import os
 import pandas as pd
@@ -64,6 +65,15 @@ uploaded_files = st.file_uploader(
 st.divider()
 
 
+@st.dialog("Preview", width='large')
+def open_df_modal(df):
+    df = pd.concat(
+        [
+            df.head(10),
+            df.tail(10),
+        ]
+    )
+    st.write(df)
 
 # Function to get file creation date
 def get_file_creation_date(file):
@@ -86,7 +96,10 @@ def push_file_to_snowflake(df, filename):
     conn = st.connection("snowflake")
 
     temp_file_path = f'/tmp/TBP_FD_{datetime.now().strftime("%y%m%d")}_{filename}.pqt'
-    df.to_parquet(temp_file_path, index=False)
+    try:
+        df.to_parquet(temp_file_path)
+    except Exception as e:
+        df.astype(str).to_parquet(temp_file_path)
 
     # Define the stage name (assuming a stage exists in Snowflake)
     stage_name = '@TASTY_BYTES_SAMPLE_DATA.RAW_POS.TBPDB_PYTHON'
@@ -95,13 +108,13 @@ def push_file_to_snowflake(df, filename):
     # Execute the PUT command to stage the CSV data
     cursor = conn.cursor()
     put_command = f"PUT 'file://{temp_file_path}' {stage_name};"
-    st.write(put_command)
     cursor.execute(put_command)
 
 def get_uploaded_file_as_df(uploaded_file):
     # Read the file's bytes
     bytes_data = uploaded_file.read()
-
+    dfs = {}
+    _filename =  str(uploaded_file.name).rsplit('.', 1)[0]
     # Display the filename and raw bytes (optional)
     st.write("Filename:", uploaded_file.name)
 
@@ -111,14 +124,21 @@ def get_uploaded_file_as_df(uploaded_file):
     # Check file type and read accordingly
     if uploaded_file.name.lower().endswith('.csv'):
         df = pd.read_csv(file_like)
+        dfs[_filename] = df
         push_file_to_snowflake(df, uploaded_file.name)
     elif uploaded_file.name.lower().endswith('.xlsx'):
-        df = pd.read_excel(file_like)
-        push_file_to_snowflake(df, uploaded_file.name)
+
+        sheet_dict = pd.read_excel(file_like, sheet_name=None)  # Returns a dictionary of DataFrames
+
+        # Cycle through all the sheets
+        for sheet_name, df in sheet_dict.items():
+            _filename = str(uploaded_file.name).rsplit('.', 1)[0]+ '_SHEET_' + sheet_name.upper().replace('SHEET','')
+            dfs[_filename] = df
+            push_file_to_snowflake(df, _filename)
     else:
         st.error(f'Invalid file {uploaded_file.name}')
 
-    return df.head(10)
+    return dfs
 
 
 # Handle file upload and company selection for each uploaded file
@@ -129,37 +149,43 @@ if uploaded_files:
         col1, col2 = st.columns([3, 1])
 
         # File name (col1)
-        st.markdown(f"<h5 style='text-align: left;'>{uploaded_file.name}</h5>", unsafe_allow_html=True)
-        file_preview = get_uploaded_file_as_df(uploaded_file)
-        st.write(file_preview)
-        creation_date = get_file_creation_date(uploaded_file)
-        st.write(f"Created on {creation_date}")
+        file_previews = get_uploaded_file_as_df(uploaded_file)
+        for filename, preview  in file_previews.items():
+            st.markdown(f"<h5 style='text-align: left;'>{filename}</h5>", unsafe_allow_html=True)
 
-        ass_comp, ass_camp = st.columns(2)
+            if st.button("Preview DF", key=f"df_button_{filename}_{i}"):
+                open_df_modal(preview)
+            # todo make a popup st.write(preview)
+            creation_date = get_file_creation_date(uploaded_file)
+            st.write(f"Created on {creation_date}")
+            st.write(f"{len(preview)} records received")
 
-        with ass_comp:
-            company_selection = st.selectbox(
-                label='Assign Company',
-                options=[''] + list(company_list),
-                key=f"company_{i}"  # Unique key to store the selection in session_state
-            )
+            ass_comp, ass_camp = st.columns(2)
 
-        with ass_camp:
-            campaign_selection = st.selectbox(
-                label='Assign Campaign',
-                options=('', 'Current Client', 'Prospect'),
-                key=f"campaign_{i}"  # Unique key to store the selection in session_state
-            )
+            with ass_comp:
+                company_selection = st.selectbox(
+                    label='Assign Company',
+                    options=[''] + list(company_list),
+                    key=f"company{filename}_{i}"  # Unique key to store the selection in session_state
+                )
+
+            with ass_camp:
+                campaign_selection = st.selectbox(
+                    label='Assign Campaign',
+                    options=('', 'Current Client', 'Prospect'),
+                    key=f"campaign_{filename}_{i}"  # Unique key to store the selection in session_state
+                )
 
 
-        # Store the selected company and file in session state
-        st.session_state.file_data[uploaded_file.name] = {
-            "file_name": uploaded_file.name,
-            "company": company_selection,
-            "campaign": campaign_selection,
-            "file": uploaded_file,
-            "creation_date": creation_date
-        }
+            # Store the selected company and file in session state
+            st.session_state.file_data[filename] = {
+                "file_name": uploaded_file.name,
+                "company": company_selection,
+                "campaign": campaign_selection,
+                "file": uploaded_file,
+                "creation_date": creation_date
+            }
+
         st.divider()
 
 # Submit button to process all files and companies
@@ -167,8 +193,6 @@ if uploaded_files:
 if len(st.session_state.file_data) > 0:
 
     if st.button(f"Submit {len(st.session_state.file_data)} Files"):
-        # Process the files and associated companies
-        st.write("Processing the following files and their associated companies:")
 
         df = pd.DataFrame(
             list((st.session_state.file_data.values()))
@@ -180,7 +204,6 @@ if len(st.session_state.file_data) > 0:
         for file in df.to_dict('records'):
             if file['company'] != file['company'] or file['company'] == None or len(str(file['company'])) == 0:
                 unassigned_files.append(f'{file["file_name"]} is missing Company designation')
-
 
             if file['campaign'] != file['campaign'] or file['campaign'] == None or len(str(file['campaign'])) == 0:
                 unassigned_files.append(f'{file["file_name"]} is missing Campaign designation')
