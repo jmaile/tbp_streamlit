@@ -13,8 +13,8 @@ def run_flask():
 # Flask route to get the public IP of the user
 @app.route('/get_ip', methods=['GET'])
 def get_ip():
-    # Make an external API call to get the user's public IP
     try:
+        # Make an external API call to get the user's public IP
         response = requests.get('https://api.ipify.org?format=json')
         if response.status_code == 200:
             ip_data = response.json()
@@ -27,6 +27,7 @@ def get_ip():
 # Function to get the IP of the user from Flask
 def get_user_ip():
     try:
+        # Request the Flask endpoint to get the public IP of the user
         response = requests.get("http://127.0.0.1:5000/get_ip")
         return response.text
     except requests.exceptions.RequestException as e:
