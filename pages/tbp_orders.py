@@ -43,6 +43,13 @@ orders = orders[
 
 orders['ship_date'] = pd.to_datetime(orders['ship_date'])
 orders['ihd'] = pd.to_datetime(orders['ihd'])
+
+ready_to_ship = orders[
+    (orders['ship_date'] <= (datetime.today() + timedelta(days=0)))
+    & (orders['status'].str.contains('ship', case=False, na=False))
+]
+
+
 # Define a function to categorize the dates
 def categorize_date(ship_date):
     today = datetime.today()
@@ -60,6 +67,7 @@ orders['ship_date_cat'] = orders['ship_date'].apply(categorize_date)
 orders['min_ship_date_per_cat'] = orders.groupby('ship_date_cat')['ship_date'].transform('min')
 
 orders['ship_date'] = pd.to_datetime(orders['ship_date'])
+
 
 
 # Create a date slider to filter 'ship_date' column
@@ -80,6 +88,8 @@ if len(past_orders) > 0:
         if st.button(f"{len(past_orders)} ASAP Orders"):
             st.session_state.slider_selected_max_date = yesterday  # Set max date to yesterday
             st.rerun()
+
+
 
 with col2:
     # Date slider to filter ship_date range with dynamic max_date
@@ -113,7 +123,7 @@ else:
     st.header(f"{len(filtered_orders)} Orders set to ship in the next {days_to_end} days")
 
 # Get unique statuses for the current ship_date_cat
-statuses = filtered_orders['status'].drop_duplicates().tolist()
+statuses = sorted(filtered_orders['status'].drop_duplicates().tolist())
 
 
 # Define the number of columns you want
@@ -129,7 +139,7 @@ for i, status in enumerate(statuses):
     column = columns[i % num_columns]
 
     # Create checkbox for each status
-    if column.checkbox(f'({len(filtered_orders[filtered_orders["status"].isin([status])])}) {status} ', key=status):
+    if column.checkbox(f'({len(filtered_orders[filtered_orders["status"].isin([status])])}) {status.replace("TBP - ","").title()} ', key=status):
         selected_statuses.append(status)
 
 # Filter the DataFrame based on selected statuses
@@ -171,13 +181,28 @@ st.data_editor(
         )
     },
     disabled=True,
-    height=800,
+    height=500,
     hide_index=True  # Hide the index
 )
+
+@st.dialog("Confirm Orders", width='large')
+def mark_rts(df):
+    st.write('Are you sure these orders are ready to ship?')
+    st.write(df)
+
+    # Simulate a sign-off by confirming with a checkbox
+    agree = st.checkbox("I affirm that the information is correct and I agree to proceed.")
+
+    if agree:
+        st.write("Thank you for your confirmation!")
+    else:
+        st.write("Please confirm before proceeding.")
+
+if st.button(f"Ready to Ship {len(ready_to_ship)} orders!"):
+    mark_rts(ready_to_ship)
 
 if selected_statuses:
     st.write(f'{len(filtered_orders)} records found in {selected_statuses}')
 else:
     st.write(f'{len(filtered_orders)} records displayed')
-
 

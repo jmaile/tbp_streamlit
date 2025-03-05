@@ -4,24 +4,57 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 
-st.set_page_config(page_title="Order Picker", layout="wide")
-
+st.set_page_config(page_title="Order Picker", layout="wide",  initial_sidebar_state='collapsed')
 
 conn = st.connection("snowflake")
 
+st.write('<style>body {  margin: 0;  font-family: Arial, Helvetica, sans-serif;} .header{padding: 10px 16px;  background: #555;  color: #f1f1f1; position:fixed;top:0;} .sticky {  position: fixed; top: 90;  width: 100%;}  </style><div class="header" id="myHeader">'+'dsdad'+'</div>', unsafe_allow_html=True)
 
 @st.cache_data
 def load_data_from_db():
-    return pd.read_sql(sql='select * from TASTY_BYTES_SAMPLE_DATA.RAW_POS.COMPANY', con=conn)
 
+    df = pd.read_sql(
+        sql=
+            """
+                select * from TASTY_BYTES_SAMPLE_DATA.RAW_POS.OPEN_TICKETS
+            """
+        ,
+        con=conn
+    )
+
+    df = df[
+        [
+            'rep',
+            'ticket_id',
+            'company',
+            'product',
+            'product_size',
+            'data_file_status',
+            'status',
+            'tbpdb_status',
+            'ship_date',
+            'ihd',
+            'adorbit_qty',
+            'tbpdb_campaign',
+            'ticket_summary',
+        ]
+    ]
+    df['ihd'] = pd.to_datetime(df['ihd'])
+    df['ihd_month'] = df['product'] + ' for ' + df['ihd'].apply(lambda x: x.replace(day=1).strftime('%B, %Y'))
+    return df
 
 df = load_data_from_db()
+
+
+open_tickets = df.copy()
+
+
 
 df['ticket_description'] = (
     df['ticket_id'].astype(str) + ' | ' +
     df['company'] + ' | ' +
     pd.to_datetime(df['ship_date']).dt.strftime('%Y-%m-%d') + ' | ' +  # Format ship_date
-    df['ihd'] + '|  ' +
+    df['ihd'].dt.strftime('%Y-%m-%d') + '|  ' +
     df['status'] + ' (' + df['data_file_status'] + ')'  # Include data_file_status
 )
 
@@ -48,197 +81,135 @@ def add_record():
 
 selected_ticket_description = None
 
-page_col1, page_col2 = st.columns(2)
+# Create a container for the ticket input and details\
+with st.container(border=True):
+    selected_order = False
+    st.markdown("<h2 style='text-align: center;'>Select an Order</h2>", unsafe_allow_html=True)
 
-with page_col1:
-
-    # Create a container for the ticket input and details\
     with st.container(border=True):
-        st.markdown("<h2 style='text-align: center;'>Ticket Details</h2>", unsafe_allow_html=True)
 
-        # Selectbox for choosing a ticket description
-        selected_ticket_description = st.selectbox(
-            "Select a Ticket ID",
-            set(df['ticket_description'].tolist()),
-            help="Choose a ticket to view its details"
-        )
+        col1, col2 = st.columns([4, 3])
+        with col1:
+            companies = st.multiselect(
+                "Add a company",
+                open_tickets['company'].drop_duplicates().tolist()
+            )
 
-        # Display ticket details inside a professional container
+            open_tickets_filtered_by_company = open_tickets[open_tickets['company'].isin(companies)]
+            # Create tabs for each company
+            tabs = st.tabs(companies)
+
+            # Loop through each tab and display the respective dataframe
+            for tab_name, tab in zip(companies, tabs):
+                with tab:
+
+                    # Filter the dataframe based on the company for the current tab
+                    filtered_df = open_tickets_filtered_by_company[
+                        open_tickets_filtered_by_company['company'] == tab_name]
+                    selected_ihd_month = st.selectbox(f"Select a product for {tab_name}",
+                                                      filtered_df['ihd_month'].drop_duplicates().tolist())
+                    if selected_ihd_month:
+                        filtered_df = filtered_df[filtered_df['ihd_month'] == selected_ihd_month]
+
+                    st.text(f'{len(filtered_df)} Open Orders Found')
+                    filtered_df = filtered_df.sort_values(by=['ship_date', 'ihd'], ascending=[True, True])
+                    # Display dataframe and allow row selection
+                    selected_row_index = st.dataframe(
+                        filtered_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                    )
+
+                    with st.expander("Closed Orders"):
+                        st.write('''
+                            sutm cute                    
+                        ''')
+                    _order = selected_row_index.selection.rows
+                    if _order:
+                        selected_order = filtered_df.to_dict('records')[_order[0]]
+
+        with col2:
+
+            if selected_order:
+                # Display the fields in a neat way with labels
+                st.markdown(f"<h4 style='text-align: center;'>Ticket Information for {selected_order['ticket_id']} </h4>", unsafe_allow_html=True)
+                st.write(selected_order)
+            else:
+                'Select an Order!!!'
+    # Display ticket details inside a professional container
+    if selected_order:
         with st.container():
-            # Display the fields in a neat way with labels
-            st.markdown(f"<h4 style='text-align: center;'>Ticket Information for {get_field_for_selected_ticket(selected_ticket_description, 'ticket_id')} </h4>", unsafe_allow_html=True)
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                ticket_info = []
-                st.markdown(f'[AdOrbit](https://tbp.adorbit.com/tickets/ticket/?id={get_field_for_selected_ticket(selected_ticket_description, "ticket_id")})')
-
-                for x in ['rep']:
-                    ticket_info.append(x.upper().replace('_', ' ') + ' : ' + get_field_for_selected_ticket(selected_ticket_description, x))
-                st.write('<br>'.join(ticket_info), unsafe_allow_html=True)
-
-            with col2:
-                ticket_info = []
-                for x in [ 'status', 'data_file_status']:
-                    ticket_info.append(x.upper().replace('_', ' ') + ' : ' + get_field_for_selected_ticket(selected_ticket_description, x))
-                st.write('<br>'.join(ticket_info), unsafe_allow_html=True)
-
-            with col3:
-                ticket_info = []
-                for x in ['ship_date', 'ihd']:
-                    ticket_info.append(x.upper().replace('_', ' ') + ' : ' + get_field_for_selected_ticket(selected_ticket_description, x))
-                st.write('<br>'.join(ticket_info), unsafe_allow_html=True)
-
-            st.write(get_field_for_selected_ticket(selected_ticket_description, 'original_ticket_summary'))
-
-            st.divider()
+            st.markdown("<h2 style='text-align: center;'>Add File(s)</h2>", unsafe_allow_html=True)
 
             # Initialize session state for keeping track of the number of file selectors
             if 'file_count' not in st.session_state:
                 st.session_state.file_count = 1  # Start with 1 file selectbox
 
             # Layout columns
-            col1, col2 = st.columns(2)
 
             # Track the selected files and options for each file
             file_selects = []
             file_options = []
+            p_col1, p_col2 = st.columns(2)
 
-            # Generate selectboxes and radio buttons dynamically based on the file count
-            for i in range(st.session_state.file_count):
+            with p_col1:
+                col1, col2 = st.columns([10,2])
+                # Generate selectboxes and radio buttons dynamically based on the file count
+                for i in range(st.session_state.file_count):
 
-                with col1:
-                    # Use session state to store the selection for each file
-                    selected_file = st.selectbox(
-                        f"Select File {i + 1}",
-                        ('file-id...', 'another-file-id...', 'file-xyz...'),
-                        key=f"file_{i}"  # Unique key for each selectbox
-                    )
-                    file_selects.append(selected_file)  # Store the selection
+                    with col1:
+                        # Use session state to store the selection for each file
+                        selected_file = st.selectbox(
+                            f"Select File {i + 1}",
+                            ('file-id...', 'another-file-id...', 'file-xyz...'),
+                            key=f"file_{i}"  # Unique key for each selectbox
+                        )
+                        file_selects.append(selected_file)  # Store the selection
 
-                with col2:
-                    # Radio button to choose an option for each file
-                    selected_option = st.radio(
-                        f"Choose an option for File {i + 1}",
-                        options=["Scrub", "Mail"],
-                        index=1,  # Default option
-                        key=f"option_{i}"  # Unique key for each radio button
-                    )
-                    file_options.append(selected_option)  # Store the selection
+                    with col2:
+                        # Radio button to choose an option for each file
+                        selected_option = st.radio(
+                            f"File Designation",
+                            options=["Scrub", "Mail"],
+                            index=1,  # Default option
+                            key=f"option_{i}"  # Unique key for each radio button
+                        )
+                        file_options.append(selected_option)  # Store the selection
 
-            # Button to add another file selectbox
-            if st.button("Add a File"):
-                # Increment the file count in session state when button is clicked
-                st.session_state.file_count += 1
-                st.rerun()
+                # Button to add another file selectbox
+                if st.button("Add a File"):
+                    # Increment the file count in session state when button is clicked
+                    st.session_state.file_count += 1
+                    st.rerun()
 
-
-            st.divider()
+            with p_col2:
+                st.write('map')
 
             # Button to add new record
             if st.button("Add to Count"):
                 add_record()
                 st.success("New order added to count!")
 
-with page_col2:
-    with st.container(border=True):
-        st.markdown("<h2 style='text-align: center;'>Map</h2>", unsafe_allow_html=True)
-        mapping_df = pd.read_pickle(
-            r"\\192.168.4.16\Mail Files\Mailing Lists\TBPDB_Automation\tbpdb_lists\tbpdb_cass_out\01Mar25-250301_TTNZ_MLRSRS_C-CASS250302.pkl"
-        )
-        mapping_df = mapping_df.dropna()
+            st.divider()
 
+            # Sample DataFrame
+            test_df = {
+                'ticket_id': [1, 2, 3, 4, 5, 6],
+                'company': ['Company A', 'Company A', 'Company B', 'Company B', 'Company A', 'Company B'],
+                'ship_date': ['2025-03-01', '2025-03-02', '2025-03-01', '2025-03-03', '2025-03-02', '2025-03-04'],
+                'status': ['Open', 'Closed', 'Open', 'Closed', 'Open', 'Closed']
+            }
 
-        def generate_random_color():
-            hex_color = f"#{random.randint(0, 0xFFFFFF):06x}"  # Generate hex color
-            # Convert hex color to RGBA format
-            hex_color = hex_color.lstrip('#')
-            return str([random.randint(0, 255) for _ in range(4)])
+            # Create DataFrame
+            test_df = pd.DataFrame(test_df)
 
-        # Map random colors to each unique 'BCC_CASS_SCF' label
-        unique_labels = mapping_df['BCC_CASS_SCF Label'].unique()
-        label_to_color = {label: generate_random_color() for label in unique_labels}
-        # Add a new column 'random_color' based on the mapping
-        mapping_df['scf_color'] = mapping_df['BCC_CASS_SCF Label'].map(label_to_color)
+            # Group the DataFrame by 'company'
+            grouped = test_df.groupby('company')
 
+            st.markdown("<h2 style='text-align: center;'>Count Sign-Off</h2>", unsafe_allow_html=True)
 
-        mapping_df['mapping_zip'] = mapping_df['BCC_CASS_zip'].astype(str).str[:7]
-        mapping_df['BCC_CASS_Latitude'] = pd.to_numeric(mapping_df['BCC_CASS_Latitude'],errors='coerce')
-        mapping_df['BCC_CASS_Longitude'] = pd.to_numeric(mapping_df['BCC_CASS_Longitude'],errors='coerce')
-        # Group by 'zip' and calculate mean and count for latitude and longitude
-        grouped_df = mapping_df.dropna(subset=['BCC_CASS_Latitude', 'BCC_CASS_Longitude']).groupby(['scf_color','mapping_zip']).agg(
-            mean_lat=('BCC_CASS_Latitude', 'mean'),  # Mean of latitude
-            mean_long=('BCC_CASS_Longitude', 'mean'),  # Mean of longitude
-            count_lat=('BCC_CASS_Latitude', 'size'),  # Count of non-null latitudes
-        ).reset_index()
-
-
-        column_layer =  pdk.Layer(
-            'HexagonLayer',
-            data=mapping_df,
-            get_position='[BCC_CASS_Longitude, BCC_CASS_Latitude]',
-            #get_elevation="count_lat",
-            auto_highlight=True,
-            elevation_scale=50,
-
-            pickable=True,
-            elevation_range=[0, 500],
-            extruded=True,
-            coverage=1
-        )
-
-        tooltip = {
-            "html": "<b>{count_lat}</b> meters away from an MRT station, costs <b>{price_per_unit_area}</b> NTD/sqm",
-            "style": {"background": "grey", "color": "white", "font-family": '"Helvetica Neue", Arial',
-                      "z-index": "10000"},
-        }
-
-
-        r = pdk.Deck(
-            column_layer,
-            initial_view_state=pdk.ViewState(
-                latitude=grouped_df['mean_lat'].mean(),  # Set the center of the map
-                longitude=grouped_df['mean_long'].mean(),
-                zoom=10,
-
-                pitch=50
-            ),
-            map_provider='mapbox',
-            map_style='mapbox://styles/mapbox/light-v10',  # Set the map style to 'light'
-            tooltip=tooltip
-        )
-
-        # Display the map with Pydeck chart in Streamlit
-        st.pydeck_chart(r)
-
-# Sample DataFrame
-test_df = {
-    'ticket_id': [1, 2, 3, 4, 5, 6],
-    'company': ['Company A', 'Company A', 'Company B', 'Company B', 'Company A', 'Company B'],
-    'ship_date': ['2025-03-01', '2025-03-02', '2025-03-01', '2025-03-03', '2025-03-02', '2025-03-04'],
-    'status': ['Open', 'Closed', 'Open', 'Closed', 'Open', 'Closed']
-}
-
-# Create DataFrame
-test_df = pd.DataFrame(test_df)
-
-# Group the DataFrame by 'company'
-grouped = test_df.groupby('company')
-
-with st.container(border=True):
-    st.markdown("<h2 style='text-align: center;'>Count</h2>", unsafe_allow_html=True)
-
-    # Display grouped data with collapsible sections
-    st.write("Ticket Data (Grouped by Company)")
-
-    # Iterate over the groups
-    for company, group in grouped:
-        with st.expander(f"(5 M/ 2 S) 12345 | syunner | ds"):
-            # Display the group inside the expander
-            st.dataframe(group)
-
-
-
-    # Button to add new record
-    if st.button(f"Send Count to {get_field_for_selected_ticket(selected_ticket_description, 'rep')}"):
-        st.success("New order added to count!")
+            # Button to add new record
+            if st.button(f"Email Count to {get_field_for_selected_ticket(selected_ticket_description, 'rep')}"):
+                st.success("New order added to count!")
