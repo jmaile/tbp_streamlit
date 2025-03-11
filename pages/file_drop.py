@@ -185,15 +185,14 @@ if uploaded_files:
                     "creation_date": creation_date,
                     "found_df": found_df.to_dict('records'),
                 }
+                print(uploaded_file.name)
 
             st.divider()
 
 # Submit button to process all files and companies
 
 if len(st.session_state.file_data) > 0:
-
     if st.button(f"Submit {len(st.session_state.file_data)} Files"):
-
         df = pd.DataFrame(
             list((st.session_state.file_data.values()))
         )
@@ -212,7 +211,7 @@ if len(st.session_state.file_data) > 0:
             found_df['tbpfd_company'] = data_dict['company']
             found_df['tbpfd_campaign'] = data_dict['campaign']
             found_df['tbpfd_filename'] = file_name
-            push_dataframe_to_snowflake_staging(found_df,filename)
+            push_dataframe_to_snowflake_staging(found_df,file_name)
 
             st.dataframe(found_df,height=100)
             st.success(f"{len(found_df)} records from {file_name} has been successfully pushed to Snowflake!")

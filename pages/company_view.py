@@ -1,90 +1,36 @@
-import numpy as np
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
-from faker import Faker
-st.set_page_config(page_title="Company View", layout="wide")
+# Sample data for tables (same as before)
+table1 = pd.DataFrame({'Col1': [1, 2, 3], 'Col2': ['A', 'B', 'C']})
+table2 = pd.DataFrame({'Col1': [4, 5, 6], 'Col2': ['D', 'E', 'F']})
 
-conn = st.connection("snowflake")
+# Notification data (name and count of issues)
+notifications = {
+    "Warning 1: Data Inconsistency": 5,
+    "Warning 2: Missing Values": 3,
+    "Warning 3: System Error": 2,
+}
 
-@st.cache_data
-def get_open_tickets_df():
+# Main section for notifications
+st.header("Notifications")
+for notification, count in notifications.items():
+    with st.expander(f"{notification} ({count})"):
+        if st.button(f"View details for {notification}"):
+            st.session_state.selected_notification = notification
 
-    df = pd.read_sql(
-        sql=
-            """
-                select * from TASTY_BYTES_SAMPLE_DATA.RAW_POS.OPEN_TICKETS
-            """
-        ,
-        con=conn
-    )
+# Display the table based on the selected notification
+if 'selected_notification' in st.session_state:
+    selected_notification = st.session_state.selected_notification
+    st.write(f"You selected: {selected_notification}")
 
-    df = df[
-        [
-            'ticket_id',
-            'company',
-            'product',
-            'product_size',
-            'data_file_status',
-            'status',
-            'tbpdb_status',
-            'ship_date',
-            'ihd',
-            'adorbit_qty',
-            'tbpdb_campaign',
-            'ticket_summary',
-        ]
-    ]
-    df['ihd'] = pd.to_datetime(df['ihd'])
-
-    df['ihd_month'] = df['product'] + ' for ' + df['ihd'].apply(lambda x: x.replace(day=1).strftime('%B, %Y'))
-
-    return df
-
-open_tickets = get_open_tickets_df()
-
-with st.container(border=True):
-
-    companies = st.multiselect(
-        "Add a company",
-        open_tickets['company'].drop_duplicates().tolist()
-    )
-
-    open_tickets_filtered_by_company = open_tickets[open_tickets['company'].isin(companies)]
-    # Create tabs for each company
-    tabs = st.tabs(companies)
-
-    # Loop through each tab and display the respective dataframe
-    for tab_name, tab in zip(companies, tabs):
-        with tab:
-
-            # Filter the dataframe based on the company for the current tab
-            filtered_df = open_tickets_filtered_by_company[open_tickets_filtered_by_company['company'] == tab_name]
-            selected_ihd_month = st.selectbox(f"Select a product for {tab_name}",
-                                            filtered_df['ihd_month'].drop_duplicates().tolist())
-            if selected_ihd_month:
-                filtered_df = filtered_df[filtered_df['ihd_month'] == selected_ihd_month]
-
-
-            st.text(f'{len(filtered_df)} Open Orders Found')
-
-            # Display dataframe and allow row selection
-            selected_row_index = st.dataframe(
-                filtered_df.sort_values(by=['ship_date', 'ihd'], ascending=[True, True]),
-                use_container_width=True,
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-            )
-
-            with st.expander("Closed Orders"):
-                st.write('''
-                    sutm cute                    
-                ''')
-
-            _order = selected_row_index.selection.rows
-            if _order:
-                selected_order = filtered_df.iloc[_order].to_dict('records')[0]
-                st.write(selected_order)
-            else:
-                st.write('Select an Order')
+    if selected_notification == "Warning 1: Data Inconsistency":
+        st.write(table1)
+    elif selected_notification == "Warning 2: Missing Values":
+        st.write(table2)
+    elif selected_notification == "Warning 3: System Error":
+        # Placeholder for actual error data
+        st.write("Here are the details for System Errors...")
+        st.write(table1)  # Placeholder
+else:
+    st.write("Please select a notification to view details.")

@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 
+
 st.set_page_config(page_title="Order Picker", layout="wide",  initial_sidebar_state='collapsed')
 
 conn = st.connection("snowflake")
@@ -78,8 +79,26 @@ def add_record():
     new_row = pd.DataFrame([new_data])  # Create a new DataFrame for the new row
     st.session_state.data = pd.concat([st.session_state.data, new_row], ignore_index=True)  # Use pd.concat instead of append
 
+# Get query parameters from the URL using st.query_params
+query_params = st.query_params
+
+# Check if 'ticket_id' is in the query parameters and display it
+URL_TICKET = None
+
+if 'ticket_id' in query_params:
+    URL_TICKET = int(query_params['ticket_id'])
+    print(open_tickets['ticket_id'].tolist())
+    if URL_TICKET not in open_tickets['ticket_id'].tolist():
+        st.warning(f'Ticket {URL_TICKET} is invalid!')
+        URL_TICKET = None
+    else:
+        st.success(f"Parsed ticket ID from URL: {URL_TICKET}")
+else:
+    st.write("No ticket_id found in the URL.")
+
 
 selected_ticket_description = None
+
 
 # Create a container for the ticket input and details\
 with st.container(border=True):
@@ -90,45 +109,79 @@ with st.container(border=True):
 
         col1, col2 = st.columns([4, 3])
         with col1:
+            default = None
+
+            if URL_TICKET:
+                default = open_tickets[open_tickets['ticket_id'] == URL_TICKET]['company'].tolist()[0]
+
             companies = st.multiselect(
                 "Add a company",
-                open_tickets['company'].drop_duplicates().tolist()
+                open_tickets['company'].drop_duplicates().tolist(),
+                default=default
             )
 
             open_tickets_filtered_by_company = open_tickets[open_tickets['company'].isin(companies)]
-            # Create tabs for each company
-            tabs = st.tabs(companies)
 
-            # Loop through each tab and display the respective dataframe
-            for tab_name, tab in zip(companies, tabs):
-                with tab:
+            if companies:
+                tabs = st.tabs(companies)
 
-                    # Filter the dataframe based on the company for the current tab
-                    filtered_df = open_tickets_filtered_by_company[
-                        open_tickets_filtered_by_company['company'] == tab_name]
-                    selected_ihd_month = st.selectbox(f"Select a product for {tab_name}",
-                                                      filtered_df['ihd_month'].drop_duplicates().tolist())
-                    if selected_ihd_month:
-                        filtered_df = filtered_df[filtered_df['ihd_month'] == selected_ihd_month]
+                for tab_name, tab in zip(companies, tabs):
+                    with tab:
 
-                    st.text(f'{len(filtered_df)} Open Orders Found')
-                    filtered_df = filtered_df.sort_values(by=['ship_date', 'ihd'], ascending=[True, True])
-                    # Display dataframe and allow row selection
-                    selected_row_index = st.dataframe(
-                        filtered_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        on_select="rerun",
-                        selection_mode="single-row",
-                    )
+                        # Filter the dataframe based on the company for the current tab
+                        filtered_df = open_tickets_filtered_by_company[
+                            open_tickets_filtered_by_company['company'] == tab_name]
 
-                    with st.expander("Closed Orders"):
-                        st.write('''
-                            sutm cute                    
-                        ''')
-                    _order = selected_row_index.selection.rows
-                    if _order:
-                        selected_order = filtered_df.to_dict('records')[_order[0]]
+                        default_index = 0
+                        if URL_TICKET:
+                            default_index = None
+
+                        selected_ihd_month = st.selectbox(
+                            f"Select a product for {tab_name}",
+                            filtered_df['ihd_month'].drop_duplicates().tolist(),
+                            index=default_index
+                        )
+                        if selected_ihd_month:
+                            filtered_df = filtered_df[filtered_df['ihd_month'] == selected_ihd_month]
+
+                        st.text(f'{len(filtered_df)} Open Orders Found')
+                        filtered_df = filtered_df.sort_values(by=['ship_date', 'ihd'], ascending=[True, True])
+
+                        matching_row_indices = None
+                        if URL_TICKET:
+                            tmp = filtered_df.reset_index(drop=True)
+                            # Condition: Find the row where 'Company' is 'Company B'
+                            condition = tmp['ticket_id'] == URL_TICKET
+                            matching_row_indices = tmp.loc[condition].index.tolist()[0]
+
+
+                        def color_rows(row):
+                            # Color the row background if 'Age' > 30
+                            color = 'background-color: #f2eda7; color: black' if row['ticket_id'] == URL_TICKET else ''
+                            return [color] * len(row)
+
+
+                        # Apply the styling to the filtered DataFrame
+                        styled_df = filtered_df.style.apply(color_rows, axis=1)
+
+                        # Display dataframe and allow row selection
+                        selected_row_index = st.dataframe(
+                            styled_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            on_select="rerun",
+                            selection_mode="single-row",
+                        )
+
+                        st.write('Data Requests!!')
+                        with st.expander("Closed Orders"):
+                            st.write('''
+                                sutm cute                    
+                            ''')
+                        _order = selected_row_index.selection.rows
+
+                        if _order:
+                            selected_order = filtered_df.to_dict('records')[_order[0]]
 
         with col2:
 
@@ -145,7 +198,9 @@ with st.container(border=True):
 
             # Initialize session state for keeping track of the number of file selectors
             if 'file_count' not in st.session_state:
-                st.session_state.file_count = 1  # Start with 1 file selectbox
+                st.session_state.file_count = 0  # Start with 1 file selectbox
+            if 'purchase_file_count' not in st.session_state:
+                st.session_state.purchase_file_count = 0  # Start with 1 file selectbox
 
             # Layout columns
 
@@ -178,11 +233,43 @@ with st.container(border=True):
                         )
                         file_options.append(selected_option)  # Store the selection
 
+                for i in range(st.session_state.purchase_file_count):
+                    with col1:
+                        # Use session state to store the selection for each file
+                        selected_file = st.text_input(
+                            f"Enter Order #to be Purchased",
+                            (''),
+                            key=f"purchased_file_{i}"  # Unique key for each selectbox
+                        )
+                        file_selects.append(selected_file)  # Store the selection
+
+                    with col2:
+                        # Radio button to choose an option for each file
+                        selected_option = st.number_input(
+                            f"Purchase Qty",
+                            min_value=100,
+                            step=100,
+                            key=f"purchased_file_qty_{i}"  # Unique key for each selectbox
+                        )
+                        st.selectbox(
+                            "via",
+                            ("Acxiom", "MailersHaven", "Excelsior"),
+                            key=f"purchased_file_qty_via_{i}"  # Unique key for each selectbox
+                        )
+                        file_options.append(selected_option)  # Store the selection
+
                 # Button to add another file selectbox
                 if st.button("Add a File"):
                     # Increment the file count in session state when button is clicked
                     st.session_state.file_count += 1
                     st.rerun()
+
+                # Button to add another file selectbox
+                if st.button("Add a Purchased File"):
+                    # Increment the file count in session state when button is clicked
+                    st.session_state.purchase_file_count += 1
+                    st.rerun()
+
 
             with p_col2:
                 st.write('map')

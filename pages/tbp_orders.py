@@ -189,14 +189,19 @@ st.data_editor(
 def mark_rts(df):
     st.write('Are you sure these orders are ready to ship?')
     st.write(df)
+    if "visibility" not in st.session_state:
+        st.session_state.visibility = "visible"
+        st.session_state.disabled = False
 
+    st.text_input(
+        '',
+        placeholder="Manual Jobs (Radius, Thank You)",
+        key="placeholder",
+    )
     # Simulate a sign-off by confirming with a checkbox
-    agree = st.checkbox("I affirm that the information is correct and I agree to proceed.")
-
-    if agree:
-        st.write("Thank you for your confirmation!")
-    else:
-        st.write("Please confirm before proceeding.")
+    send_to_data = st.button("I affirm that the information is correct and I agree to proceed.")
+    if send_to_data:
+        st.rerun()
 
 if st.button(f"Ready to Ship {len(ready_to_ship)} orders!"):
     mark_rts(ready_to_ship)
